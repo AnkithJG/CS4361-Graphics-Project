@@ -1,0 +1,3 @@
+echo "build/" >> .gitignore
+echo "*.exe" >> .gitignore
+echo "*.obj" >> .gitignore
