@@ -1,39 +1,41 @@
-// RayTracer.cpp
+// RayTracer.cpp - Screen-Space Fluid Rendering
 
 #include "RayTracer.h"
 #include <iostream>
 #include <cmath>
 #include <limits>
 #include <omp.h>
+#include <algorithm>
 
-// Constructor
 RayTracer::RayTracer(int width, int height)
-    : width(width), height(height), device(nullptr), scene(nullptr)
+    : width(width), height(height), device(nullptr), scene(nullptr), particle_radius(0.025f)
 {
     aspect_ratio = (float)width / (float)height;
+
+    // Allocate depth buffer
+    depth_buffer = new float[width * height * 2]; // Double buffer for smoothing
+
     initEmbree();
 
-    // Default camera setup
     setCamera(
-        glm::vec3(3.0f, 2.5f, 3.0f), // position
-        glm::vec3(1.0f, 1.0f, 1.0f), // look at
-        glm::vec3(0.0f, 1.0f, 0.0f), // up
-        45.0f                        // fov
-    );
+        glm::vec3(3.0f, 2.5f, 3.0f),
+        glm::vec3(1.0f, 1.0f, 1.0f),
+        glm::vec3(0.0f, 1.0f, 0.0f),
+        45.0f);
 
     std::cout << "RayTracer initialized: " << width << "x" << height << std::endl;
+    std::cout << "Using screen-space fluid rendering" << std::endl;
 }
 
-// Destructor
 RayTracer::~RayTracer()
 {
+    delete[] depth_buffer;
     if (scene)
         rtcReleaseScene(scene);
     if (device)
         rtcReleaseDevice(device);
 }
 
-// Initialize Embree
 void RayTracer::initEmbree()
 {
     device = rtcNewDevice(nullptr);
@@ -43,7 +45,6 @@ void RayTracer::initEmbree()
         return;
     }
 
-    // Check for errors
     RTCError error = rtcGetDeviceError(device);
     if (error != RTC_ERROR_NONE)
     {
@@ -53,21 +54,16 @@ void RayTracer::initEmbree()
     std::cout << "Embree device created successfully" << std::endl;
 }
 
-// Set up camera
 void RayTracer::setCamera(const glm::vec3 &pos, const glm::vec3 &target, const glm::vec3 &up, float fov_degrees)
 {
     camera_pos = pos;
     this->fov = glm::radians(fov_degrees);
 
-    // Calculate camera basis vectors
     camera_dir = glm::normalize(target - pos);
     camera_right = glm::normalize(glm::cross(camera_dir, up));
     camera_up = glm::normalize(glm::cross(camera_right, camera_dir));
-
-    std::cout << "Camera set at (" << pos.x << ", " << pos.y << ", " << pos.z << ")" << std::endl;
 }
 
-// Sphere intersection callback for Embree
 void RayTracer::sphereIntersectFunc(const struct RTCIntersectFunctionNArguments *args)
 {
     int *valid = args->valid;
@@ -80,7 +76,6 @@ void RayTracer::sphereIntersectFunc(const struct RTCIntersectFunctionNArguments 
 
     Sphere *sphere = &((Sphere *)ptr)[primID];
 
-    // Get ray data
     float ox = RTCRayN_org_x(rays, 1, 0);
     float oy = RTCRayN_org_y(rays, 1, 0);
     float oz = RTCRayN_org_z(rays, 1, 0);
@@ -90,7 +85,6 @@ void RayTracer::sphereIntersectFunc(const struct RTCIntersectFunctionNArguments 
     float tnear = RTCRayN_tnear(rays, 1, 0);
     float tfar = RTCRayN_tfar(rays, 1, 0);
 
-    // Ray-sphere intersection
     glm::vec3 oc(ox - sphere->center.x, oy - sphere->center.y, oz - sphere->center.z);
     glm::vec3 dir(dx, dy, dz);
 
@@ -105,14 +99,10 @@ void RayTracer::sphereIntersectFunc(const struct RTCIntersectFunctionNArguments 
 
         if (t >= tnear && t <= tfar)
         {
-            // Update hit information
             RTCRayN_tfar(rays, 1, 0) = t;
-            RTCHitN_u(hits, 1, 0) = 0.0f;
-            RTCHitN_v(hits, 1, 0) = 0.0f;
             RTCHitN_geomID(hits, 1, 0) = args->geomID;
             RTCHitN_primID(hits, 1, 0) = primID;
 
-            // Calculate normal
             glm::vec3 hitpoint = oc + t * dir;
             glm::vec3 normal = glm::normalize(hitpoint);
             RTCHitN_Ng_x(hits, 1, 0) = normal.x;
@@ -122,7 +112,6 @@ void RayTracer::sphereIntersectFunc(const struct RTCIntersectFunctionNArguments 
     }
 }
 
-// Sphere bounds callback for Embree
 void RayTracer::sphereBoundsFunc(const struct RTCBoundsFunctionArguments *args)
 {
     const Sphere *spheres = (const Sphere *)args->geometryUserPtr;
@@ -137,7 +126,6 @@ void RayTracer::sphereBoundsFunc(const struct RTCBoundsFunctionArguments *args)
     bounds_o->upper_z = sphere.center.z + sphere.radius;
 }
 
-// Sphere occlusion callback (for shadow rays)
 void RayTracer::sphereOccludedFunc(const struct RTCOccludedFunctionNArguments *args)
 {
     int *valid = args->valid;
@@ -174,19 +162,16 @@ void RayTracer::sphereOccludedFunc(const struct RTCOccludedFunctionNArguments *a
     }
 }
 
-// Update scene with particle positions
 void RayTracer::updateScene(const std::vector<glm::vec3> &particle_positions, float particle_radius)
 {
-    // Release old scene
+    this->particle_radius = particle_radius;
+
     if (scene)
     {
         rtcReleaseScene(scene);
     }
 
-    // Create new scene
     scene = rtcNewScene(device);
-
-    // Convert particles to spheres
     spheres.clear();
     spheres.reserve(particle_positions.size());
 
@@ -194,26 +179,21 @@ void RayTracer::updateScene(const std::vector<glm::vec3> &particle_positions, fl
     {
         Sphere s;
         s.center = pos;
-        s.radius = particle_radius;
-        s.color = glm::vec3(0.3f, 0.6f, 0.9f); // Blue water color
+        s.radius = particle_radius * 2.0f; // Larger for better overlap
+        s.color = glm::vec3(0.3f, 0.6f, 0.9f);
         spheres.push_back(s);
     }
 
     buildScene();
-
-    std::cout << "Scene updated with " << spheres.size() << " spheres" << std::endl;
 }
 
-// Build Embree scene from spheres
 void RayTracer::buildScene()
 {
     if (spheres.empty())
         return;
 
-    // Create user geometry for spheres
     RTCGeometry geom = rtcNewGeometry(device, RTC_GEOMETRY_TYPE_USER);
 
-    // Set bounds and intersection functions
     rtcSetGeometryUserPrimitiveCount(geom, spheres.size());
     rtcSetGeometryUserData(geom, spheres.data());
     rtcSetGeometryBoundsFunction(geom, sphereBoundsFunc, nullptr);
@@ -227,14 +207,11 @@ void RayTracer::buildScene()
     rtcCommitScene(scene);
 }
 
-// Generate ray direction for a pixel
 glm::vec3 RayTracer::generateRayDirection(int pixel_x, int pixel_y)
 {
-    // Normalized device coordinates [-1, 1]
     float ndc_x = (2.0f * pixel_x / width - 1.0f) * aspect_ratio;
     float ndc_y = 1.0f - 2.0f * pixel_y / height;
 
-    // Calculate ray direction in camera space
     float tan_fov = tan(fov / 2.0f);
     glm::vec3 ray_dir = camera_dir +
                         ndc_x * tan_fov * camera_right +
@@ -243,55 +220,29 @@ glm::vec3 RayTracer::generateRayDirection(int pixel_x, int pixel_y)
     return glm::normalize(ray_dir);
 }
 
-// Simple shading function
-glm::vec3 RayTracer::shade(const RTCRayHit &rayhit)
-{
-    // Check if we hit something
-    if (rayhit.hit.geomID == RTC_INVALID_GEOMETRY_ID)
-    {
-        // Background color (black)
-        return glm::vec3(0.0f, 0.0f, 0.0f);
-    }
-
-    // Get sphere that was hit
-    const Sphere &sphere = spheres[rayhit.hit.primID];
-
-    // Get surface normal
-    glm::vec3 normal(rayhit.hit.Ng_x, rayhit.hit.Ng_y, rayhit.hit.Ng_z);
-    normal = glm::normalize(normal);
-
-    // Simple directional light from above
-    glm::vec3 light_dir = glm::normalize(glm::vec3(0.3f, 1.0f, 0.3f));
-
-    // Diffuse shading
-    float diffuse = std::max(0.0f, glm::dot(normal, light_dir));
-
-    // Ambient + diffuse
-    glm::vec3 ambient = sphere.color * 0.3f;
-    glm::vec3 color = ambient + sphere.color * diffuse * 0.7f;
-
-    return color;
-}
-
-// Main render function
-void RayTracer::render(unsigned char *framebuffer)
+// Pass 1: Render depth values of sphere intersections
+void RayTracer::renderDepthPass(float *depth_buffer)
 {
     if (!scene)
-    {
-        std::cerr << "ERROR: No scene to render!" << std::endl;
         return;
+
+    const float far_depth = 1000.0f;
+
+// Initialize depth buffer
+#pragma omp parallel for
+    for (int i = 0; i < width * height; ++i)
+    {
+        depth_buffer[i] = far_depth;
     }
 
-// Parallel ray tracing
+// Ray trace to get depths
 #pragma omp parallel for schedule(dynamic)
     for (int y = 0; y < height; ++y)
     {
         for (int x = 0; x < width; ++x)
         {
-            // Generate ray
             glm::vec3 ray_dir = generateRayDirection(x, y);
 
-            // Setup Embree ray
             RTCRayHit rayhit;
             rayhit.ray.org_x = camera_pos.x;
             rayhit.ray.org_y = camera_pos.y;
@@ -306,17 +257,188 @@ void RayTracer::render(unsigned char *framebuffer)
             rayhit.hit.geomID = RTC_INVALID_GEOMETRY_ID;
             rayhit.hit.primID = RTC_INVALID_GEOMETRY_ID;
 
-            // Trace ray
             rtcIntersect1(scene, &rayhit);
 
-            // Shade pixel
-            glm::vec3 color = shade(rayhit);
+            if (rayhit.hit.geomID != RTC_INVALID_GEOMETRY_ID)
+            {
+                depth_buffer[y * width + x] = rayhit.ray.tfar;
+            }
+        }
+    }
+}
 
-            // Write to framebuffer (RGB)
+// Pass 2: Smooth depth buffer (bilateral filter)
+void RayTracer::smoothDepthBuffer(float *depth_in, float *depth_out)
+{
+    const int kernel_size = 5; // 5x5 kernel
+    const int half_kernel = kernel_size / 2;
+    const float far_depth = 1000.0f;
+    const float depth_threshold = 0.1f; // Don't smooth across large depth discontinuities
+
+#pragma omp parallel for schedule(dynamic)
+    for (int y = 0; y < height; ++y)
+    {
+        for (int x = 0; x < width; ++x)
+        {
+            float center_depth = depth_in[y * width + x];
+
+            // Don't smooth background
+            if (center_depth >= far_depth * 0.9f)
+            {
+                depth_out[y * width + x] = far_depth;
+                continue;
+            }
+
+            float sum_depth = 0.0f;
+            float sum_weight = 0.0f;
+
+            // Bilateral filter: smooth while preserving edges
+            for (int ky = -half_kernel; ky <= half_kernel; ++ky)
+            {
+                for (int kx = -half_kernel; kx <= half_kernel; ++kx)
+                {
+                    int nx = x + kx;
+                    int ny = y + ky;
+
+                    if (nx >= 0 && nx < width && ny >= 0 && ny < height)
+                    {
+                        float neighbor_depth = depth_in[ny * width + nx];
+
+                        if (neighbor_depth < far_depth * 0.9f)
+                        {
+                            // Spatial weight (Gaussian-like)
+                            float spatial_dist = sqrt((float)(kx * kx + ky * ky));
+                            float spatial_weight = exp(-spatial_dist * spatial_dist / 8.0f);
+
+                            // Range weight (depth similarity)
+                            float depth_diff = abs(neighbor_depth - center_depth);
+                            float range_weight = (depth_diff < depth_threshold) ? 1.0f : 0.1f;
+
+                            float weight = spatial_weight * range_weight;
+                            sum_depth += neighbor_depth * weight;
+                            sum_weight += weight;
+                        }
+                    }
+                }
+            }
+
+            depth_out[y * width + x] = (sum_weight > 0.0f) ? (sum_depth / sum_weight) : center_depth;
+        }
+    }
+}
+
+// Reconstruct 3D position from screen coordinates and depth
+glm::vec3 RayTracer::reconstructWorldPosition(int x, int y, float depth)
+{
+    glm::vec3 ray_dir = generateRayDirection(x, y);
+    return camera_pos + ray_dir * depth;
+}
+
+// Compute normal from depth buffer using finite differences
+glm::vec3 RayTracer::computeNormalFromDepth(int x, int y, float *depth_buffer)
+{
+    const float far_depth = 1000.0f;
+    float center_depth = depth_buffer[y * width + x];
+
+    if (center_depth >= far_depth * 0.9f)
+        return glm::vec3(0, 1, 0);
+
+    // Get neighboring depths
+    float depth_right = (x < width - 1) ? depth_buffer[y * width + (x + 1)] : center_depth;
+    float depth_left = (x > 0) ? depth_buffer[y * width + (x - 1)] : center_depth;
+    float depth_up = (y > 0) ? depth_buffer[(y - 1) * width + x] : center_depth;
+    float depth_down = (y < height - 1) ? depth_buffer[(y + 1) * width + x] : center_depth;
+
+    // Reconstruct 3D positions
+    glm::vec3 pos_center = reconstructWorldPosition(x, y, center_depth);
+    glm::vec3 pos_right = reconstructWorldPosition(x + 1, y, depth_right);
+    glm::vec3 pos_up = reconstructWorldPosition(x, y - 1, depth_up);
+
+    // Compute normal from cross product
+    glm::vec3 dx = pos_right - pos_center;
+    glm::vec3 dy = pos_up - pos_center;
+    glm::vec3 normal = glm::normalize(glm::cross(dx, dy));
+
+    return normal;
+}
+
+glm::vec3 RayTracer::shadeFluid(const glm::vec3 &surface_point, const glm::vec3 &normal)
+{
+    glm::vec3 base_color(0.1f, 0.35f, 0.7f);
+
+    glm::vec3 light1_dir = glm::normalize(glm::vec3(0.5f, 1.0f, 0.3f));
+    glm::vec3 light2_dir = glm::normalize(glm::vec3(-0.3f, 0.5f, -0.5f));
+
+    float diff1 = std::max(0.0f, glm::dot(normal, light1_dir));
+    float diff2 = std::max(0.0f, glm::dot(normal, light2_dir)) * 0.4f;
+
+    glm::vec3 view_dir = glm::normalize(camera_pos - surface_point);
+    glm::vec3 half_vec1 = glm::normalize(light1_dir + view_dir);
+    float spec1 = pow(std::max(0.0f, glm::dot(normal, half_vec1)), 80.0f);
+
+    float fresnel = pow(1.0f - std::max(0.0f, glm::dot(normal, view_dir)), 3.5f);
+
+    glm::vec3 ambient = base_color * 0.3f;
+    glm::vec3 diffuse = base_color * (diff1 * 0.6f + diff2 * 0.3f);
+    glm::vec3 specular = glm::vec3(1.0f, 1.0f, 1.0f) * spec1 * 0.8f;
+    glm::vec3 rim = glm::vec3(0.6f, 0.8f, 1.0f) * fresnel * 0.5f;
+
+    return ambient + diffuse + specular + rim;
+}
+
+// Pass 3: Render final fluid surface from smoothed depth
+void RayTracer::renderFluidSurface(unsigned char *framebuffer, float *depth_buffer)
+{
+    const float far_depth = 1000.0f;
+
+#pragma omp parallel for schedule(dynamic)
+    for (int y = 0; y < height; ++y)
+    {
+        for (int x = 0; x < width; ++x)
+        {
+            float depth = depth_buffer[y * width + x];
+            glm::vec3 color;
+
+            if (depth < far_depth * 0.9f)
+            {
+                // Reconstruct surface point and compute normal
+                glm::vec3 surface_point = reconstructWorldPosition(x, y, depth);
+                glm::vec3 normal = computeNormalFromDepth(x, y, depth_buffer);
+
+                color = shadeFluid(surface_point, normal);
+            }
+            else
+            {
+                // Background
+                color = glm::vec3(0.0f, 0.0f, 0.0f);
+            }
+
             int index = (y * width + x) * 3;
             framebuffer[index + 0] = (unsigned char)(glm::clamp(color.r, 0.0f, 1.0f) * 255);
             framebuffer[index + 1] = (unsigned char)(glm::clamp(color.g, 0.0f, 1.0f) * 255);
             framebuffer[index + 2] = (unsigned char)(glm::clamp(color.b, 0.0f, 1.0f) * 255);
         }
     }
+}
+
+// Main render function - three pass pipeline
+void RayTracer::render(unsigned char *framebuffer)
+{
+    if (!scene)
+    {
+        std::cerr << "ERROR: No scene to render!" << std::endl;
+        return;
+    }
+
+    float *depth_buffer_1 = depth_buffer;
+    float *depth_buffer_2 = depth_buffer + (width * height);
+
+    // Pass 1: Render sphere depths
+    renderDepthPass(depth_buffer_1);
+
+    // Pass 2: Smooth depth buffer
+    smoothDepthBuffer(depth_buffer_1, depth_buffer_2);
+
+    // Pass 3: Render final fluid surface
+    renderFluidSurface(framebuffer, depth_buffer_2);
 }
