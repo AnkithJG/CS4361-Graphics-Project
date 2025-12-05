@@ -13,10 +13,10 @@ const float H = 0.06f;            // Smoothing length (radius of influence)
 const float H2 = H * H;           // H squared
 const float MASS = 0.0002f;       // Particle mass
 const float RHO0 = 1000.0f;       // Rest density of water (1000 kg/m^3)
-const float K = 100.0f;           // Gas constant (for pressure calculation)
-const float MU = 0.5f;            // Viscosity constant
+const float K = 150.0f;           // Gas constant (for pressure calculation)
+const float MU = 0.9f;            // Viscosity constant
 const float G = 9.8f;             // Gravity (m/s^2)
-const float WALL_DAMPING = -0.5f; // Damping on collision
+const float WALL_DAMPING = -0.4f; // Damping on collision
 
 // Precomputed kernel coefficients
 const float POLY6_COEFF = 315.0f / (64.0f * glm::pi<float>() * glm::pow(H, 9));

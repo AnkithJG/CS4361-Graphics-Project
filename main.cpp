@@ -120,7 +120,7 @@ int main()
 
     // --- SPH Initialization ---
     // Using 3000 particles as planned
-    solver = new SPHSolver(500);
+    solver = new SPHSolver(2000);
 
     // Main render loop
     while (!glfwWindowShouldClose(window))
