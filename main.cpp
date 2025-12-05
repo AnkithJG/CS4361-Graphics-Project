@@ -20,64 +20,56 @@ glm::vec3 cameraUp = glm::vec3(0.0f, 1.0f, 0.0f);
 
 // --- Drawing Functions ---
 
-void render_particles()
+
+   void render_particles()
 {
-    if (!solver)
-        return;
-
-    // Setup Model-View-Projection (MVP) matrices
-    glm::mat4 projection = glm::perspective(glm::radians(45.0f), (float)WINDOW_WIDTH / (float)WINDOW_HEIGHT, 0.1f, 100.0f);
-    glm::mat4 view = glm::lookAt(cameraPos, cameraTarget, cameraUp);
-
-    // Set OpenGL matrices
-    glMatrixMode(GL_PROJECTION);
-    glLoadMatrixf(glm::value_ptr(projection));
-    glMatrixMode(GL_MODELVIEW);
-    glLoadMatrixf(glm::value_ptr(view));
-
-    // Simple 3D Container (wireframe box for context)
     float tank_size = 2.0f;
-    glColor3f(0.5f, 0.5f, 0.5f);
+
+    // Faint “glass” tank
+    glColor4f(0.7f, 0.7f, 0.7f, 0.15f);
     glLineWidth(1.0f);
     glBegin(GL_LINES);
-    // Floor and Ceiling
-    for (int i = 0; i <= 1; ++i)
-    { // i=0 for floor, i=1 for ceiling
-        float y = i * tank_size;
-        glVertex3f(0.0f, y, 0.0f);
-        glVertex3f(tank_size, y, 0.0f);
-        glVertex3f(tank_size, y, 0.0f);
-        glVertex3f(tank_size, y, tank_size);
-        glVertex3f(tank_size, y, tank_size);
-        glVertex3f(0.0f, y, tank_size);
-        glVertex3f(0.0f, y, tank_size);
-        glVertex3f(0.0f, y, 0.0f);
-    }
-    // Vertical edges
-    glVertex3f(0.0f, 0.0f, 0.0f);
-    glVertex3f(0.0f, tank_size, 0.0f);
-    glVertex3f(tank_size, 0.0f, 0.0f);
-    glVertex3f(tank_size, tank_size, 0.0f);
-    glVertex3f(tank_size, 0.0f, tank_size);
-    glVertex3f(tank_size, tank_size, tank_size);
-    glVertex3f(0.0f, 0.0f, tank_size);
-    glVertex3f(0.0f, tank_size, tank_size);
+    // bottom
+    glVertex3f(0.0f, 0.0f, 0.0f);       glVertex3f(tank_size, 0.0f, 0.0f);
+    glVertex3f(tank_size, 0.0f, 0.0f);  glVertex3f(tank_size, 0.0f, tank_size);
+    glVertex3f(tank_size, 0.0f, tank_size); glVertex3f(0.0f, 0.0f, tank_size);
+    glVertex3f(0.0f, 0.0f, tank_size);  glVertex3f(0.0f, 0.0f, 0.0f);
+    // vertical
+    glVertex3f(0.0f, 0.0f, 0.0f);       glVertex3f(0.0f, tank_size, 0.0f);
+    glVertex3f(tank_size, 0.0f, 0.0f);  glVertex3f(tank_size, tank_size, 0.0f);
+    glVertex3f(tank_size, 0.0f, tank_size); glVertex3f(tank_size, tank_size, tank_size);
+    glVertex3f(0.0f, 0.0f, tank_size);  glVertex3f(0.0f, tank_size, tank_size);
+    // top
+    glVertex3f(0.0f, tank_size, 0.0f);      glVertex3f(tank_size, tank_size, 0.0f);
+    glVertex3f(tank_size, tank_size, 0.0f); glVertex3f(tank_size, tank_size, tank_size);
+    glVertex3f(tank_size, tank_size, tank_size); glVertex3f(0.0f, tank_size, tank_size);
+    glVertex3f(0.0f, tank_size, tank_size); glVertex3f(0.0f, tank_size, 0.0f);
     glEnd();
 
-    // Draw Particles (OpenGL Point Sprites)
+    // Water particles
     const auto &particles = solver->getParticles();
 
-    glColor3f(1.0f, 1.0f, 1.0f); // White color
-    glPointSize(8.0f);           // Particle size
+    glPointSize(10.0f);
 
     glBegin(GL_POINTS);
     for (const auto &p : particles)
     {
-        // The position is already in world space, OpenGL handles the projection
+        float t = p.pos.y / tank_size;
+        if (t < 0.0f) t = 0.0f;
+        if (t > 1.0f) t = 1.0f;
+
+        float r = 0.05f * (1.0f - t);
+        float g = 0.35f + 0.15f * t;
+        float b = 0.9f  + 0.1f  * t;
+        float a = 0.85f;
+
+        glColor4f(r, g, b, a);
         glVertex3f(p.pos.x, p.pos.y, p.pos.z);
     }
     glEnd();
 }
+
+
 
 void framebuffer_size_callback(GLFWwindow *window, int width, int height)
 {
@@ -128,9 +120,33 @@ int main()
         // --- Simulation Update ---
         solver->update();
 
-        // --- Rendering ---
-        glClearColor(0.0f, 0.0f, 0.0f, 1.0f); // Black background
+        // Dark, slightly bluish background so the water stands out
+        // Dark, slightly bluish background
+        glClearColor(0.02f, 0.02f, 0.08f, 1.0f);
+
+
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+        // Enable alpha blending for translucent “water drops”
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+        // Allow variable point sizes
+        glEnable(GL_PROGRAM_POINT_SIZE);
+// ---- CAMERA ----
+        glm::vec3 cameraPos    = glm::vec3(3.5f, 3.0f, 3.5f);
+        glm::vec3 cameraTarget = glm::vec3(1.0f, 1.0f, 1.0f);
+        glm::vec3 cameraUp     = glm::vec3(0.0f, 1.0f, 0.0f);
+
+        // Build view + projection matrices
+        glm::mat4 view = glm::lookAt(cameraPos, cameraTarget, cameraUp);
+        glm::mat4 proj = glm::perspective(glm::radians(45.0f), (float)WINDOW_WIDTH / (float)WINDOW_HEIGHT, 0.1f, 100.0f);
+        // Convert glm → OpenGL
+        glMatrixMode(GL_PROJECTION);
+        glLoadMatrixf(glm::value_ptr(proj));
+
+        glMatrixMode(GL_MODELVIEW);
+        glLoadMatrixf(glm::value_ptr(view));
 
         render_particles();
 

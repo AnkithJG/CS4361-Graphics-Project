@@ -18,7 +18,7 @@ find_package(glfw3 3.3 REQUIRED)
 find_package(OpenGL REQUIRED)
 find_package(glm REQUIRED)
 find_package(GLEW REQUIRED)  # Add this line
-find_package(Embree REQUIRED)
+# find_package(Embree REQUIRED)
 
 # --- APPLICATION SETUP ---
 add_executable(sph_app main.cpp SPH.cpp)
@@ -28,5 +28,5 @@ target_link_libraries(sph_app
     glfw
     OpenGL::GL
     GLEW::GLEW  # Add this line
-    embree
+    # embree
 )
