@@ -179,7 +179,7 @@ void RayTracer::updateScene(const std::vector<glm::vec3> &particle_positions, fl
     {
         Sphere s;
         s.center = pos;
-        s.radius = particle_radius * 3.5f; // Much larger for better blending
+        s.radius = particle_radius * 3.0f; // Reduced from 3.5x for better performance
         s.color = glm::vec3(0.3f, 0.6f, 0.9f);
         spheres.push_back(s);
     }
@@ -270,10 +270,10 @@ void RayTracer::renderDepthPass(float *depth_buffer)
 // Pass 2: Smooth depth buffer (bilateral filter)
 void RayTracer::smoothDepthBuffer(float *depth_in, float *depth_out)
 {
-    const int kernel_size = 9; // Larger kernel for more smoothing
+    const int kernel_size = 7; // Smaller kernel = faster (was 9)
     const int half_kernel = kernel_size / 2;
     const float far_depth = 1000.0f;
-    const float depth_threshold = 0.2f; // More tolerant to depth differences
+    const float depth_threshold = 0.15f; // Tighter threshold
 
 #pragma omp parallel for schedule(dynamic)
     for (int y = 0; y < height; ++y)
@@ -306,17 +306,14 @@ void RayTracer::smoothDepthBuffer(float *depth_in, float *depth_out)
 
                         if (neighbor_depth < far_depth * 0.9f)
                         {
-                            // Spatial weight (Gaussian-like)
-                            float spatial_dist = sqrt((float)(kx * kx + ky * ky));
-                            float spatial_weight = exp(-spatial_dist * spatial_dist / 8.0f);
-
-                            // Range weight (depth similarity)
+                            // Simplified weight calculation for speed
                             float depth_diff = abs(neighbor_depth - center_depth);
-                            float range_weight = (depth_diff < depth_threshold) ? 1.0f : 0.1f;
 
-                            float weight = spatial_weight * range_weight;
-                            sum_depth += neighbor_depth * weight;
-                            sum_weight += weight;
+                            if (depth_diff < depth_threshold)
+                            {
+                                sum_depth += neighbor_depth;
+                                sum_weight += 1.0f;
+                            }
                         }
                     }
                 }
