@@ -262,14 +262,33 @@ void SPHSolver::compute_forces()
 
 void SPHSolver::integrate()
 {
+    const float MAX_VEL = 10.0f; // Maximum velocity cap
+
     for (auto &p : particles)
     {
         // Euler Integration
         p.vel += p.acc * DT;
+
+        // Cap velocity to prevent explosions
+        float vel_len = glm::length(p.vel);
+        if (vel_len > MAX_VEL)
+        {
+            p.vel = (p.vel / vel_len) * MAX_VEL;
+        }
+
+        // Check for NaN
+        if (std::isnan(p.vel.x) || std::isnan(p.vel.y) || std::isnan(p.vel.z))
+        {
+            p.vel = glm::vec3(0.0f);
+        }
+        if (std::isnan(p.pos.x) || std::isnan(p.pos.y) || std::isnan(p.pos.z))
+        {
+            p.pos = glm::vec3(1.0f); // Reset to center
+        }
+
         p.pos += p.vel * DT;
     }
 }
-
 // Simple collision with the 3D tank walls (0 to 2 in XZ, 0 to 2 in Y)
 void SPHSolver::handle_boundary()
 {
