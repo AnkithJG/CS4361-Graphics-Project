@@ -179,7 +179,7 @@ void RayTracer::updateScene(const std::vector<glm::vec3> &particle_positions, fl
     {
         Sphere s;
         s.center = pos;
-        s.radius = particle_radius * 2.0f; // Larger for better overlap
+        s.radius = particle_radius * 3.5f; // Much larger for better blending
         s.color = glm::vec3(0.3f, 0.6f, 0.9f);
         spheres.push_back(s);
     }
@@ -270,10 +270,10 @@ void RayTracer::renderDepthPass(float *depth_buffer)
 // Pass 2: Smooth depth buffer (bilateral filter)
 void RayTracer::smoothDepthBuffer(float *depth_in, float *depth_out)
 {
-    const int kernel_size = 5; // 5x5 kernel
+    const int kernel_size = 9; // Larger kernel for more smoothing
     const int half_kernel = kernel_size / 2;
     const float far_depth = 1000.0f;
-    const float depth_threshold = 0.1f; // Don't smooth across large depth discontinuities
+    const float depth_threshold = 0.2f; // More tolerant to depth differences
 
 #pragma omp parallel for schedule(dynamic)
     for (int y = 0; y < height; ++y)
