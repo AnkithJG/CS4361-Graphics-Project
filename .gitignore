@@ -1,3 +1,25 @@
 echo "build/" >> .gitignore
 echo "*.exe" >> .gitignore
 echo "*.obj" >> .gitignore
+
+# CMake build directories
+/build/
+
+# VCPKG directories (optional, but keeps your repo clean)
+/vcpkg/
+
+# Visual Studio files
+*.sln
+*.suo
+*.user
+*.ncb
+*.aps
+*.pdb
+*.obj
+*.exe
+*.dll
+*.lib
+
+# Temporary files
+*~
+#*#
