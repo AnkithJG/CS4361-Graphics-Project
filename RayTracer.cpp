@@ -179,7 +179,7 @@ void RayTracer::updateScene(const std::vector<glm::vec3> &particle_positions, fl
     {
         Sphere s;
         s.center = pos;
-        s.radius = particle_radius * 3.0f; // Reduced from 3.5x for better performance
+        s.radius = particle_radius * 4.5f; // MUCH bigger overlap for fluid look
         s.color = glm::vec3(0.3f, 0.6f, 0.9f);
         spheres.push_back(s);
     }
@@ -270,10 +270,10 @@ void RayTracer::renderDepthPass(float *depth_buffer)
 // Pass 2: Smooth depth buffer (bilateral filter)
 void RayTracer::smoothDepthBuffer(float *depth_in, float *depth_out)
 {
-    const int kernel_size = 7; // Smaller kernel = faster (was 9)
+    const int kernel_size = 11; // Bigger kernel for more blending
     const int half_kernel = kernel_size / 2;
     const float far_depth = 1000.0f;
-    const float depth_threshold = 0.15f; // Tighter threshold
+    const float depth_threshold = 0.3f; // Very tolerant - blend aggressively
 
 #pragma omp parallel for schedule(dynamic)
     for (int y = 0; y < height; ++y)
@@ -433,9 +433,10 @@ void RayTracer::render(unsigned char *framebuffer)
     // Pass 1: Render sphere depths
     renderDepthPass(depth_buffer_1);
 
-    // Pass 2: Smooth depth buffer
+    // Pass 2: Smooth depth buffer TWICE for more fluid look
     smoothDepthBuffer(depth_buffer_1, depth_buffer_2);
+    smoothDepthBuffer(depth_buffer_2, depth_buffer_1); // Second pass!
 
     // Pass 3: Render final fluid surface
-    renderFluidSurface(framebuffer, depth_buffer_2);
+    renderFluidSurface(framebuffer, depth_buffer_1);
 }
