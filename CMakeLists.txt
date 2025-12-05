@@ -13,11 +13,14 @@ elseif(EXISTS "${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake")
     set(CMAKE_TOOLCHAIN_FILE "${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake")
 endif()
 
+# --- FIND OPENMP (NEW) ---
+find_package(OpenMP REQUIRED)
+
 # --- FIND EXTERNAL LIBRARIES ---
 find_package(glfw3 3.3 REQUIRED)
 find_package(OpenGL REQUIRED)
 find_package(glm REQUIRED)
-find_package(GLEW REQUIRED)  # Add this line
+find_package(GLEW REQUIRED)
 find_package(Embree REQUIRED)
 
 # --- APPLICATION SETUP ---
@@ -27,6 +30,7 @@ add_executable(sph_app main.cpp SPH.cpp)
 target_link_libraries(sph_app
     glfw
     OpenGL::GL
-    GLEW::GLEW  # Add this line
+    GLEW::GLEW
     embree
+    OpenMP::OpenMP_CXX  # NEW LINE
 )

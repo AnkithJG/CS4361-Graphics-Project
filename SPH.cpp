@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <numeric>
 #include <chrono>
+#include <omp.h>
 
 using namespace glm;
 
@@ -196,12 +197,16 @@ void SPHSolver::find_neighbors(int particle_index, std::vector<int> &neighbors)
 
 void SPHSolver::compute_density_pressure()
 {
-    std::vector<int> neighbors;
-    neighbors.reserve(100);
+    // Remove the shared neighbors vector - each thread needs its own
 
+#pragma omp parallel for
     for (int i = 0; i < particles.size(); ++i)
     {
-        particles[i].density = MASS * W_poly6(0.0f); // Self-contribution (r=0)
+        // Each thread gets its own neighbors vector
+        std::vector<int> neighbors;
+        neighbors.reserve(100);
+
+        particles[i].density = MASS * W_poly6(0.0f);
 
         find_neighbors(i, neighbors);
         for (int j : neighbors)
@@ -211,20 +216,26 @@ void SPHSolver::compute_density_pressure()
             particles[i].density += MASS * W_poly6(r2);
         }
 
-        // Equation of State (Tait's Equation) for pressure: P = K * ( (rho / rho0)^gamma - 1 )
+        if (particles[i].density < RHO0 * 0.01f)
+        {
+            particles[i].density = RHO0 * 0.01f;
+        }
+
         particles[i].pressure = K * (glm::pow(particles[i].density / RHO0, 7.0f) - 1.0f);
         if (particles[i].pressure < 0.0f)
-            particles[i].pressure = 0.0f; // No negative pressure
+            particles[i].pressure = 0.0f;
     }
 }
 
 void SPHSolver::compute_forces()
 {
-    std::vector<int> neighbors;
-    neighbors.reserve(100);
-
+#pragma omp parallel for
     for (int i = 0; i < particles.size(); ++i)
     {
+        // Each thread gets its own neighbors vector
+        std::vector<int> neighbors;
+        neighbors.reserve(100);
+
         vec3 F_pressure(0.0f);
         vec3 F_viscosity(0.0f);
 
@@ -232,26 +243,19 @@ void SPHSolver::compute_forces()
         for (int j : neighbors)
         {
             if (i == j)
-                continue; // Skip self
+                continue;
 
             vec3 r = particles[i].pos - particles[j].pos;
             float r_len = length(r);
 
-            // Pressure Force (Spiky gradient)
             float pressure_term = (particles[i].pressure + particles[j].pressure) / (2.0f * particles[j].density);
-            // Pressure Gradient term: -(M/rho_j) * P_sum * grad(W_spiky)
             F_pressure -= MASS * pressure_term * W_spiky_grad(r, r_len);
 
-            // Viscosity Force (Laplacian kernel)
             vec3 vel_diff = particles[j].vel - particles[i].vel;
-            // Viscosity term: M * ( (vel_diff / rho_j) * mu * lapl(W_visc) )
             F_viscosity += MASS * (vel_diff / particles[j].density) * MU * W_visc_lapl(r_len);
         }
 
-        // External Force (Gravity)
         vec3 F_gravity = MASS * vec3(0.0f, -G, 0.0f);
-
-        // Total Force: F_total = F_pressure + F_viscosity + F_gravity
         particles[i].acc = (F_pressure + F_viscosity + F_gravity) / MASS;
     }
 }
