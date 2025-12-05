@@ -9,7 +9,7 @@
 
 // --- SPH Constants (Physics Parameters) ---
 const float DT = 0.0016f;         // Time step
-const float H = 0.045f;           // Smoothing length (radius of influence)
+const float H = 0.06f;            // Smoothing length (radius of influence)
 const float H2 = H * H;           // H squared
 const float MASS = 0.0002f;       // Particle mass
 const float RHO0 = 1000.0f;       // Rest density of water (1000 kg/m^3)

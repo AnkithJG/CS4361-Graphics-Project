@@ -14,7 +14,7 @@ using namespace glm;
 SPHSolver::SPHSolver(int num_particles)
 {
     // Setup for Spatial Hashing
-    cell_size = H;
+    cell_size = H * 2.0f;
     grid_size_x = grid_size_y = grid_size_z = 10; // 3D tank size 0-2 (scaled)
     int total_cells = grid_size_x * grid_size_y * grid_size_z;
     grid_map.resize(total_cells, -1);
@@ -141,6 +141,9 @@ void SPHSolver::find_neighbors(int particle_index, std::vector<int> &neighbors)
     neighbors.clear();
     const Particle &pi = particles[particle_index];
 
+    // EARLY EXIT if we have enough neighbors
+    const int MAX_NEIGHBORS = 30; // Stop searching after finding 50
+
     // Convert cell ID back to 3D grid coordinates
     int cell_x = pi.cell_id % grid_size_x;
     int cell_y = (pi.cell_id / grid_size_x) % grid_size_y;
@@ -157,29 +160,29 @@ void SPHSolver::find_neighbors(int particle_index, std::vector<int> &neighbors)
                 int ny = cell_y + dy;
                 int nz = cell_z + dz;
 
-                // Check bounds for the neighbor cell
                 if (nx >= 0 && nx < grid_size_x &&
                     ny >= 0 && ny < grid_size_y &&
                     nz >= 0 && nz < grid_size_z)
                 {
-
                     int neighbor_cell_id = nx + grid_size_x * (ny + grid_size_y * nz);
                     int start = start_index[neighbor_cell_id];
 
                     if (start != -1)
                     {
-                        // Iterate through all particles in the neighboring cell
                         for (size_t j = start; j < particles.size(); ++j)
                         {
                             if (particles[j].cell_id != neighbor_cell_id)
-                                break; // Stop when cell changes
+                                break;
 
-                            // Only include if distance is within H
                             vec3 r = pi.pos - particles[j].pos;
                             float r2 = dot(r, r);
                             if (r2 < H2)
                             {
                                 neighbors.push_back(j);
+
+                                // EARLY EXIT
+                                if (neighbors.size() >= MAX_NEIGHBORS)
+                                    return;
                             }
                         }
                     }
