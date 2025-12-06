@@ -30,33 +30,35 @@ void SPHSolver::init_particles(int num_particles)
 {
     particles.reserve(num_particles);
 
-    // Calculate how to fill bottom half of container
-    float spacing = H * 0.55f; // Tighter packing
+    float spacing = H * 0.55f;
 
-    // Container is 2x2x2, we want to fill bottom half (y from 0 to 1.0)
-    float start_x = 0.1f;
-    float start_y = 0.05f;
-    float start_z = 0.1f;
-    float max_x = 1.9f;
-    float max_y = 0.9f; // Fill up to halfway (container is 0-2, so 0-1 is half)
-    float max_z = 1.9f;
+    // Create a WIDE, SHALLOW pool that fills most of the floor
+    // Container is 2x2x2, make water spread across most of it
+    float pool_width = 1.7f;  // Almost full width
+    float pool_height = 0.4f; // SHALLOW - just 20% of container height
+    float pool_depth = 1.7f;  // Almost full depth
 
-    // Generate grid to fill volume
-    for (float y = start_y; y < max_y && particles.size() < num_particles; y += spacing)
+    // Center it
+    float start_x = (2.0f - pool_width) / 2.0f; // ~0.15
+    float start_y = 0.05f;                      // Just above floor
+    float start_z = (2.0f - pool_depth) / 2.0f; // ~0.15
+
+    float end_x = start_x + pool_width;
+    float end_y = start_y + pool_height;
+    float end_z = start_z + pool_depth;
+
+    for (float y = start_y; y < end_y && particles.size() < num_particles; y += spacing)
     {
-        for (float z = start_z; z < max_z && particles.size() < num_particles; z += spacing)
+        for (float z = start_z; z < end_z && particles.size() < num_particles; z += spacing)
         {
-            for (float x = start_x; x < max_x && particles.size() < num_particles; x += spacing)
+            for (float x = start_x; x < end_x && particles.size() < num_particles; x += spacing)
             {
                 Particle p;
                 p.pos = vec3(x, y, z);
-
-                // Tiny random velocity for natural settling
                 p.vel = vec3(
-                    (rand() / (float)RAND_MAX - 0.5f) * 0.1f,
-                    (rand() / (float)RAND_MAX - 0.5f) * 0.1f,
-                    (rand() / (float)RAND_MAX - 0.5f) * 0.1f);
-
+                    (rand() / (float)RAND_MAX - 0.5f) * 0.3f,
+                    (rand() / (float)RAND_MAX - 0.5f) * 0.3f,
+                    (rand() / (float)RAND_MAX - 0.5f) * 0.3f);
                 p.acc = vec3(0.0f);
                 p.density = RHO0;
                 p.pressure = 0.0f;
@@ -65,7 +67,9 @@ void SPHSolver::init_particles(int num_particles)
         }
     }
 
-    std::cout << "Initialized " << particles.size() << " particles filling bottom half of container." << std::endl;
+    std::cout << "Initialized " << particles.size()
+              << " particles as shallow pool ("
+              << pool_width << "x" << pool_height << "x" << pool_depth << ")" << std::endl;
 }
 
 // --- Kernel Functions ---
