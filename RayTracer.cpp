@@ -5,16 +5,19 @@
 #include <omp.h>
 #include <algorithm>
 
+// constructor - allocate buffers and set up ray tracing
 RayTracer::RayTracer(int width, int height)
     : width(width), height(height), device(nullptr), scene(nullptr), particle_radius(0.025f)
 {
     aspect_ratio = (float)width / (float)height;
 
+    // allocate depth buffers - 3x because we need 2 for separable filtering + 1 temp
     depth_buffer = new float[width * height * 3];
     temp_buffer = depth_buffer + (width * height * 2);
 
     initEmbree();
 
+    // set up default camera
     setCamera(
         glm::vec3(3.0f, 2.5f, 3.0f),
         glm::vec3(1.0f, 1.0f, 1.0f),
@@ -25,6 +28,7 @@ RayTracer::RayTracer(int width, int height)
     std::cout << "Using screen-space fluid rendering" << std::endl;
 }
 
+// destructor - clean up
 RayTracer::~RayTracer()
 {
     delete[] depth_buffer;
@@ -34,6 +38,7 @@ RayTracer::~RayTracer()
         rtcReleaseDevice(device);
 }
 
+// initialize the embree ray tracing device
 void RayTracer::initEmbree()
 {
     device = rtcNewDevice(nullptr);
@@ -52,21 +57,25 @@ void RayTracer::initEmbree()
     std::cout << "Embree device created successfully" << std::endl;
 }
 
+// set camera position and orientation
 void RayTracer::setCamera(const glm::vec3 &pos, const glm::vec3 &target, const glm::vec3 &up, float fov_degrees)
 {
     camera_pos = pos;
     this->fov = glm::radians(fov_degrees);
 
+    // compute orthonormal camera basis using cross products
     camera_dir = glm::normalize(target - pos);
     camera_right = glm::normalize(glm::cross(camera_dir, up));
     camera_up = glm::normalize(glm::cross(camera_right, camera_dir));
 }
 
+// embree callback - test if ray hits a sphere
+// this is called during ray tracing to check intersection
 void RayTracer::sphereIntersectFunc(const struct RTCIntersectFunctionNArguments *args)
 {
     int *valid = args->valid;
-    void *ptr = args->geometryUserPtr;
-    unsigned int primID = args->primID;
+    void *ptr = args->geometryUserPtr;  // pointer to sphere array
+    unsigned int primID = args->primID; // which sphere
 
     RTCRayHitN *rayhit = (RTCRayHitN *)args->rayhit;
     RTCRayN *rays = RTCRayHitN_RayN(rayhit, 1);
@@ -74,18 +83,27 @@ void RayTracer::sphereIntersectFunc(const struct RTCIntersectFunctionNArguments 
 
     Sphere *sphere = &((Sphere *)ptr)[primID];
 
+    // extract ray origin
     float ox = RTCRayN_org_x(rays, 1, 0);
     float oy = RTCRayN_org_y(rays, 1, 0);
     float oz = RTCRayN_org_z(rays, 1, 0);
+
+    // extract ray direction
     float dx = RTCRayN_dir_x(rays, 1, 0);
     float dy = RTCRayN_dir_y(rays, 1, 0);
     float dz = RTCRayN_dir_z(rays, 1, 0);
+
+    // t range (tnear is closest, tfar is farthest allowed)
     float tnear = RTCRayN_tnear(rays, 1, 0);
     float tfar = RTCRayN_tfar(rays, 1, 0);
 
+    // vector from ray origin to sphere center
     glm::vec3 oc(ox - sphere->center.x, oy - sphere->center.y, oz - sphere->center.z);
     glm::vec3 dir(dx, dy, dz);
 
+    // standard sphere-ray intersection formula
+    // ray = origin + t*direction, sphere = ||p - center|| = radius
+    // substitute and solve quadratic: a*t² + b*t + c = 0
     float a = glm::dot(dir, dir);
     float b = 2.0f * glm::dot(oc, dir);
     float c = glm::dot(oc, oc) - sphere->radius * sphere->radius;
@@ -93,14 +111,17 @@ void RayTracer::sphereIntersectFunc(const struct RTCIntersectFunctionNArguments 
 
     if (discriminant >= 0.0f)
     {
+        // take closer intersection point
         float t = (-b - sqrt(discriminant)) / (2.0f * a);
 
         if (t >= tnear && t <= tfar)
         {
+            // record hit
             RTCRayN_tfar(rays, 1, 0) = t;
             RTCHitN_geomID(hits, 1, 0) = args->geomID;
             RTCHitN_primID(hits, 1, 0) = primID;
 
+            // compute normal at hit point (for a sphere, normal = (point - center).normalize())
             glm::vec3 hitpoint = oc + t * dir;
             glm::vec3 normal = glm::normalize(hitpoint);
             RTCHitN_Ng_x(hits, 1, 0) = normal.x;
@@ -110,6 +131,7 @@ void RayTracer::sphereIntersectFunc(const struct RTCIntersectFunctionNArguments 
     }
 }
 
+// return bounding box for sphere (used for acceleration)
 void RayTracer::sphereBoundsFunc(const struct RTCBoundsFunctionArguments *args)
 {
     const Sphere *spheres = (const Sphere *)args->geometryUserPtr;
@@ -124,6 +146,7 @@ void RayTracer::sphereBoundsFunc(const struct RTCBoundsFunctionArguments *args)
     bounds_o->upper_z = sphere.center.z + sphere.radius;
 }
 
+// test if ray is blocked by sphere (for shadow rays)
 void RayTracer::sphereOccludedFunc(const struct RTCOccludedFunctionNArguments *args)
 {
     int *valid = args->valid;
@@ -155,43 +178,51 @@ void RayTracer::sphereOccludedFunc(const struct RTCOccludedFunctionNArguments *a
         float t = (-b - sqrt(discriminant)) / (2.0f * a);
         if (t >= tnear && t <= tfar)
         {
+            // mark ray as occluded (negative infinity t means blocked)
             RTCRayN_tfar(rays, 1, 0) = -std::numeric_limits<float>::infinity();
         }
     }
 }
 
+// update particle spheres from positions
 void RayTracer::updateScene(const std::vector<glm::vec3> &particle_positions, float particle_radius)
 {
     this->particle_radius = particle_radius;
 
+    // delete old scene
     if (scene)
     {
         rtcReleaseScene(scene);
     }
 
+    // create new scene
     scene = rtcNewScene(device);
     spheres.clear();
     spheres.reserve(particle_positions.size());
 
+    // convert particle positions to spheres
     for (const auto &pos : particle_positions)
     {
         Sphere s;
         s.center = pos;
-        s.radius = particle_radius * 12.0f;
-        s.color = glm::vec3(0.3f, 0.6f, 0.9f);
+        s.radius = particle_radius * 12.0f;    // scale up for visibility
+        s.color = glm::vec3(0.3f, 0.6f, 0.9f); // blue-ish color
         spheres.push_back(s);
     }
 
     buildScene();
 }
 
+// create embree geometry from spheres
 void RayTracer::buildScene()
 {
     if (spheres.empty())
         return;
 
+    // create user-defined geometry (custom intersection)
     RTCGeometry geom = rtcNewGeometry(device, RTC_GEOMETRY_TYPE_USER);
 
+    // set up callbacks
     rtcSetGeometryUserPrimitiveCount(geom, spheres.size());
     rtcSetGeometryUserData(geom, spheres.data());
     rtcSetGeometryBoundsFunction(geom, sphereBoundsFunc, nullptr);
@@ -205,12 +236,15 @@ void RayTracer::buildScene()
     rtcCommitScene(scene);
 }
 
+// generate ray direction from pixel coordinates
 glm::vec3 RayTracer::generateRayDirection(int pixel_x, int pixel_y)
 {
+    // convert pixel coordinates to normalized device coordinates (-1 to 1)
     float ndc_x = (2.0f * pixel_x / width - 1.0f) * aspect_ratio;
     float ndc_y = 1.0f - 2.0f * pixel_y / height;
 
     float tan_fov = tan(fov / 2.0f);
+    // construct ray direction in camera space
     glm::vec3 ray_dir = camera_dir +
                         ndc_x * tan_fov * camera_right +
                         ndc_y * tan_fov * camera_up;
@@ -218,6 +252,7 @@ glm::vec3 RayTracer::generateRayDirection(int pixel_x, int pixel_y)
     return glm::normalize(ray_dir);
 }
 
+// trace rays from camera and get depth (distance) to particles
 void RayTracer::renderDepthPass(float *depth_buffer)
 {
     if (!scene)
@@ -225,12 +260,14 @@ void RayTracer::renderDepthPass(float *depth_buffer)
 
     const float far_depth = 1000.0f;
 
+    // initialize all pixels to far depth
 #pragma omp parallel for
     for (int i = 0; i < width * height; ++i)
     {
         depth_buffer[i] = far_depth;
     }
 
+    // trace a ray for each pixel
 #pragma omp parallel for schedule(dynamic)
     for (int y = 0; y < height; ++y)
     {
@@ -238,6 +275,7 @@ void RayTracer::renderDepthPass(float *depth_buffer)
         {
             glm::vec3 ray_dir = generateRayDirection(x, y);
 
+            // set up ray
             RTCRayHit rayhit;
             rayhit.ray.org_x = camera_pos.x;
             rayhit.ray.org_y = camera_pos.y;
@@ -252,8 +290,10 @@ void RayTracer::renderDepthPass(float *depth_buffer)
             rayhit.hit.geomID = RTC_INVALID_GEOMETRY_ID;
             rayhit.hit.primID = RTC_INVALID_GEOMETRY_ID;
 
+            // trace it
             rtcIntersect1(scene, &rayhit);
 
+            // record depth if we hit something
             if (rayhit.hit.geomID != RTC_INVALID_GEOMETRY_ID)
             {
                 depth_buffer[y * width + x] = rayhit.ray.tfar;
