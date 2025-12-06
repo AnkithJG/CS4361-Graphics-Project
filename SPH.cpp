@@ -30,17 +30,21 @@ void SPHSolver::init_particles(int num_particles)
 {
     particles.reserve(num_particles);
 
-    float spacing = H * 0.6f;
+    float spacing = H * 0.55f; // LOOSER (was 0.35) - let particles breathe
 
-    // Drop water from ABOVE the container center
-    float block_size = 1.0f; // Compact cube
-    float start_x = 0.5f;
-    float start_y = 1.2f; // START HIGH - gravity will pull it down
-    float start_z = 0.5f;
+    // Small cube at bottom center
+    float block_size = 0.8f;
+
+    float start_x = 0.6f;
+    float start_y = 0.05f;
+    float start_z = 0.6f;
 
     float end_x = start_x + block_size;
     float end_y = start_y + block_size;
     float end_z = start_z + block_size;
+
+    // Calculate center of the block
+    glm::vec3 center(start_x + block_size / 2.0f, start_y + block_size / 2.0f, start_z + block_size / 2.0f);
 
     for (float y = start_y; y < end_y && particles.size() < num_particles; y += spacing)
     {
@@ -51,8 +55,9 @@ void SPHSolver::init_particles(int num_particles)
                 Particle p;
                 p.pos = vec3(x, y, z);
 
-                // Give particles a small downward initial velocity
-                p.vel = vec3(0.0f, -0.5f, 0.0f); // Slight downward push
+                // Give particles velocity AWAY from center (explosive start)
+                glm::vec3 dir = glm::normalize(p.pos - center);
+                p.vel = dir * 1.5f; // Push outward!
 
                 p.acc = vec3(0.0f);
                 p.density = RHO0;
@@ -63,10 +68,8 @@ void SPHSolver::init_particles(int num_particles)
     }
 
     std::cout << "Initialized " << particles.size()
-              << " particles at height " << start_y
-              << " - dropping!" << std::endl;
+              << " particles - exploding outward!" << std::endl;
 }
-
 // --- Kernel Functions ---
 
 float SPHSolver::W_poly6(float r2)
@@ -280,7 +283,7 @@ void SPHSolver::integrate()
 
 void SPHSolver::handle_boundary()
 {
-    float tank_max = 2.0f;
+    float tank_max = 1.5f;
     float boundary_min = 0.01f;
 
     for (auto &p : particles)
