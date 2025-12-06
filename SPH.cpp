@@ -30,22 +30,17 @@ void SPHSolver::init_particles(int num_particles)
 {
     particles.reserve(num_particles);
 
-    float spacing = H * 0.55f;
+    float spacing = H * 0.6f;
 
-    // Create a WIDE, SHALLOW pool that fills most of the floor
-    // Container is 2x2x2, make water spread across most of it
-    float pool_width = 1.7f;  // Almost full width
-    float pool_height = 0.4f; // SHALLOW - just 20% of container height
-    float pool_depth = 1.7f;  // Almost full depth
+    // Drop water from ABOVE the container center
+    float block_size = 1.0f; // Compact cube
+    float start_x = 0.5f;
+    float start_y = 1.2f; // START HIGH - gravity will pull it down
+    float start_z = 0.5f;
 
-    // Center it
-    float start_x = (2.0f - pool_width) / 2.0f; // ~0.15
-    float start_y = 0.05f;                      // Just above floor
-    float start_z = (2.0f - pool_depth) / 2.0f; // ~0.15
-
-    float end_x = start_x + pool_width;
-    float end_y = start_y + pool_height;
-    float end_z = start_z + pool_depth;
+    float end_x = start_x + block_size;
+    float end_y = start_y + block_size;
+    float end_z = start_z + block_size;
 
     for (float y = start_y; y < end_y && particles.size() < num_particles; y += spacing)
     {
@@ -55,10 +50,10 @@ void SPHSolver::init_particles(int num_particles)
             {
                 Particle p;
                 p.pos = vec3(x, y, z);
-                p.vel = vec3(
-                    (rand() / (float)RAND_MAX - 0.5f) * 0.3f,
-                    (rand() / (float)RAND_MAX - 0.5f) * 0.3f,
-                    (rand() / (float)RAND_MAX - 0.5f) * 0.3f);
+
+                // Give particles a small downward initial velocity
+                p.vel = vec3(0.0f, -0.5f, 0.0f); // Slight downward push
+
                 p.acc = vec3(0.0f);
                 p.density = RHO0;
                 p.pressure = 0.0f;
@@ -68,8 +63,8 @@ void SPHSolver::init_particles(int num_particles)
     }
 
     std::cout << "Initialized " << particles.size()
-              << " particles as shallow pool ("
-              << pool_width << "x" << pool_height << "x" << pool_depth << ")" << std::endl;
+              << " particles at height " << start_y
+              << " - dropping!" << std::endl;
 }
 
 // --- Kernel Functions ---

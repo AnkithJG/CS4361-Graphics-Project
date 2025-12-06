@@ -531,6 +531,8 @@ void RayTracer::render(unsigned char *framebuffer)
     smoothDepthBufferSeparable(depth_buffer_1, depth_buffer_2);
     smoothDepthBufferSeparable(depth_buffer_2, depth_buffer_1); // NEW
     smoothDepthBufferSeparable(depth_buffer_1, depth_buffer_2);
+    smoothDepthBufferSeparable(depth_buffer_1, depth_buffer_2);
+    smoothDepthBufferSeparable(depth_buffer_2, depth_buffer_1);
 
     // Pass 3: Render final fluid surface
     renderFluidSurface(framebuffer, depth_buffer_2);
