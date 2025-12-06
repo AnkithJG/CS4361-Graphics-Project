@@ -192,7 +192,7 @@ int main()
         const auto &particles = solver->getParticles();
 
         // --- 3. Only ray trace every 2 frames ---
-        if (frame_count % 2 == 0)
+        if (frame_count % 3 == 0)
         {
             std::vector<glm::vec3> positions;
             positions.reserve(particles.size());

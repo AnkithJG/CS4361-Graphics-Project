@@ -14,7 +14,7 @@ const float H2 = H * H;           // H squared
 const float MASS = 0.0002f;       // Particle mass
 const float RHO0 = 1000.0f;       // Rest density of water (1000 kg/m^3)
 const float K = 2000.0f;          // Gas constant (for pressure calculation)
-const float MU = 0.5f;            // Viscosity constant
+const float MU = 0.8f;            // Viscosity constant
 const float G = 15.0f;            // Gravity (m/s^2)
 const float WALL_DAMPING = -0.3f; // Damping on collision
 

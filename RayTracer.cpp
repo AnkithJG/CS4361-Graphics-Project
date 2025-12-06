@@ -180,7 +180,7 @@ void RayTracer::updateScene(const std::vector<glm::vec3> &particle_positions, fl
     {
         Sphere s;
         s.center = pos;
-        s.radius = particle_radius * 4.5f; // MUCH bigger overlap for fluid look
+        s.radius = particle_radius * 8.0f; // MUCH bigger overlap for fluid look
         s.color = glm::vec3(0.3f, 0.6f, 0.9f);
         spheres.push_back(s);
     }
@@ -328,7 +328,7 @@ void RayTracer::smoothDepthBuffer(float *depth_in, float *depth_out)
 // FASTER separable smoothing - horizontal then vertical passes
 void RayTracer::smoothDepthBufferSeparable(float *depth_in, float *depth_out)
 {
-    const int kernel_radius = 15; // Large radius for very smooth water
+    const int kernel_radius = 12; // Large radius for very smooth water
     const float far_depth = 1000.0f;
     const float depth_threshold = 0.4f; // Very tolerant
 
@@ -528,6 +528,8 @@ void RayTracer::render(unsigned char *framebuffer)
     // Pass 2: Smooth with FAST separable filter (3x smoothing passes for very smooth water)
     smoothDepthBufferSeparable(depth_buffer_1, depth_buffer_2);
     smoothDepthBufferSeparable(depth_buffer_2, depth_buffer_1);
+    smoothDepthBufferSeparable(depth_buffer_1, depth_buffer_2);
+    smoothDepthBufferSeparable(depth_buffer_2, depth_buffer_1); // NEW
     smoothDepthBufferSeparable(depth_buffer_1, depth_buffer_2);
 
     // Pass 3: Render final fluid surface
