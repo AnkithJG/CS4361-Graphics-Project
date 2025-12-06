@@ -53,8 +53,9 @@ private:
     std::vector<Sphere> spheres;
     float particle_radius;
 
-    // Depth buffer for screen-space smoothing
+    // Depth buffers for screen-space smoothing
     float *depth_buffer;
+    float *temp_buffer;
 
     // Embree functions
     void initEmbree();
@@ -63,6 +64,7 @@ private:
     // Rendering pipeline
     void renderDepthPass(float *depth_buffer);
     void smoothDepthBuffer(float *depth_in, float *depth_out);
+    void smoothDepthBufferSeparable(float *depth_in, float *depth_out);
     void renderFluidSurface(unsigned char *framebuffer, float *depth_buffer);
 
     // Helper functions

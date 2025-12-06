@@ -29,35 +29,33 @@ SPHSolver::~SPHSolver() {}
 void SPHSolver::init_particles(int num_particles)
 {
     particles.reserve(num_particles);
-    int side = (int)std::cbrt(num_particles);
-    float spacing = H * 0.7f; // Good spacing
 
-    // Initialize particles in UPPER HALF of container
-    // Spread them out more, but start from top
-    float start_x = 0.3f; // Leave margin from walls
-    float start_y = 1.0f; // Start from middle-top (not too high, not too low)
-    float start_z = 0.3f; // Leave margin from walls
+    // Calculate how to fill bottom half of container
+    float spacing = H * 0.55f; // Tighter packing
 
-    for (int k = 0; k < side; ++k)
+    // Container is 2x2x2, we want to fill bottom half (y from 0 to 1.0)
+    float start_x = 0.1f;
+    float start_y = 0.05f;
+    float start_z = 0.1f;
+    float max_x = 1.9f;
+    float max_y = 0.9f; // Fill up to halfway (container is 0-2, so 0-1 is half)
+    float max_z = 1.9f;
+
+    // Generate grid to fill volume
+    for (float y = start_y; y < max_y && particles.size() < num_particles; y += spacing)
     {
-        for (int j = 0; j < side; ++j)
+        for (float z = start_z; z < max_z && particles.size() < num_particles; z += spacing)
         {
-            for (int i = 0; i < side; ++i)
+            for (float x = start_x; x < max_x && particles.size() < num_particles; x += spacing)
             {
-                if (particles.size() >= num_particles)
-                    break;
-
                 Particle p;
-                p.pos = vec3(
-                    start_x + i * spacing,
-                    start_y + j * spacing,
-                    start_z + k * spacing);
+                p.pos = vec3(x, y, z);
 
-                // Small random velocity for more natural settling
+                // Tiny random velocity for natural settling
                 p.vel = vec3(
-                    (rand() / (float)RAND_MAX - 0.5f) * 0.5f,
-                    -0.5f, // Slight downward bias
-                    (rand() / (float)RAND_MAX - 0.5f) * 0.5f);
+                    (rand() / (float)RAND_MAX - 0.5f) * 0.1f,
+                    (rand() / (float)RAND_MAX - 0.5f) * 0.1f,
+                    (rand() / (float)RAND_MAX - 0.5f) * 0.1f);
 
                 p.acc = vec3(0.0f);
                 p.density = RHO0;
@@ -66,7 +64,8 @@ void SPHSolver::init_particles(int num_particles)
             }
         }
     }
-    std::cout << "Initialized " << particles.size() << " SPH particles in upper half." << std::endl;
+
+    std::cout << "Initialized " << particles.size() << " particles filling bottom half of container." << std::endl;
 }
 
 // --- Kernel Functions ---

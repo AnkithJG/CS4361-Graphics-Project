@@ -12,8 +12,9 @@ RayTracer::RayTracer(int width, int height)
 {
     aspect_ratio = (float)width / (float)height;
 
-    // Allocate depth buffer
-    depth_buffer = new float[width * height * 2]; // Double buffer for smoothing
+    // Allocate depth buffers (triple buffer for separable filtering)
+    depth_buffer = new float[width * height * 3];
+    temp_buffer = depth_buffer + (width * height * 2);
 
     initEmbree();
 
@@ -324,6 +325,97 @@ void RayTracer::smoothDepthBuffer(float *depth_in, float *depth_out)
     }
 }
 
+// FASTER separable smoothing - horizontal then vertical passes
+void RayTracer::smoothDepthBufferSeparable(float *depth_in, float *depth_out)
+{
+    const int kernel_radius = 15; // Large radius for very smooth water
+    const float far_depth = 1000.0f;
+    const float depth_threshold = 0.4f; // Very tolerant
+
+    int w = width; // Local copies for OpenMP
+    int h = height;
+
+// Horizontal pass
+#pragma omp parallel for schedule(dynamic)
+    for (int y = 0; y < h; ++y)
+    {
+        for (int x = 0; x < w; ++x)
+        {
+            float center_depth = depth_in[y * w + x];
+
+            if (center_depth >= far_depth * 0.9f)
+            {
+                temp_buffer[y * w + x] = far_depth;
+                continue;
+            }
+
+            float sum_depth = 0.0f;
+            float sum_weight = 0.0f;
+
+            for (int kx = -kernel_radius; kx <= kernel_radius; ++kx)
+            {
+                int nx = x + kx;
+                if (nx >= 0 && nx < w)
+                {
+                    float neighbor_depth = depth_in[y * w + nx];
+
+                    if (neighbor_depth < far_depth * 0.9f)
+                    {
+                        float depth_diff = abs(neighbor_depth - center_depth);
+                        if (depth_diff < depth_threshold)
+                        {
+                            sum_depth += neighbor_depth;
+                            sum_weight += 1.0f;
+                        }
+                    }
+                }
+            }
+
+            temp_buffer[y * w + x] = (sum_weight > 0.0f) ? (sum_depth / sum_weight) : center_depth;
+        }
+    }
+
+// Vertical pass
+#pragma omp parallel for schedule(dynamic)
+    for (int y = 0; y < h; ++y)
+    {
+        for (int x = 0; x < w; ++x)
+        {
+            float center_depth = temp_buffer[y * w + x];
+
+            if (center_depth >= far_depth * 0.9f)
+            {
+                depth_out[y * w + x] = far_depth;
+                continue;
+            }
+
+            float sum_depth = 0.0f;
+            float sum_weight = 0.0f;
+
+            for (int ky = -kernel_radius; ky <= kernel_radius; ++ky)
+            {
+                int ny = y + ky;
+                if (ny >= 0 && ny < h)
+                {
+                    float neighbor_depth = temp_buffer[ny * w + x];
+
+                    if (neighbor_depth < far_depth * 0.9f)
+                    {
+                        float depth_diff = abs(neighbor_depth - center_depth);
+                        if (depth_diff < depth_threshold)
+                        {
+                            sum_depth += neighbor_depth;
+                            sum_weight += 1.0f;
+                        }
+                    }
+                }
+            }
+
+            depth_out[y * w + x] = (sum_weight > 0.0f) ? (sum_depth / sum_weight) : center_depth;
+        }
+    }
+}
+
 // Reconstruct 3D position from screen coordinates and depth
 glm::vec3 RayTracer::reconstructWorldPosition(int x, int y, float depth)
 {
@@ -418,7 +510,7 @@ void RayTracer::renderFluidSurface(unsigned char *framebuffer, float *depth_buff
     }
 }
 
-// Main render function - three pass pipeline
+// Main render function - optimized pipeline with separable filtering
 void RayTracer::render(unsigned char *framebuffer)
 {
     if (!scene)
@@ -433,10 +525,11 @@ void RayTracer::render(unsigned char *framebuffer)
     // Pass 1: Render sphere depths
     renderDepthPass(depth_buffer_1);
 
-    // Pass 2: Smooth depth buffer TWICE for more fluid look
-    smoothDepthBuffer(depth_buffer_1, depth_buffer_2);
-    smoothDepthBuffer(depth_buffer_2, depth_buffer_1); // Second pass!
+    // Pass 2: Smooth with FAST separable filter (3x smoothing passes for very smooth water)
+    smoothDepthBufferSeparable(depth_buffer_1, depth_buffer_2);
+    smoothDepthBufferSeparable(depth_buffer_2, depth_buffer_1);
+    smoothDepthBufferSeparable(depth_buffer_1, depth_buffer_2);
 
     // Pass 3: Render final fluid surface
-    renderFluidSurface(framebuffer, depth_buffer_1);
+    renderFluidSurface(framebuffer, depth_buffer_2);
 }
