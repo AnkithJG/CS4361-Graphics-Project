@@ -1,5 +1,3 @@
-// main.cpp
-
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
@@ -10,16 +8,13 @@
 #include "SPH.h"
 #include "RayTracer.h"
 
-// --- Global Variables and Constants ---
 const int WINDOW_WIDTH = 640;
 const int WINDOW_HEIGHT = 480;
 SPHSolver *solver = nullptr;
 RayTracer *raytracer = nullptr;
 
-// Framebuffer for ray traced image
 unsigned char *framebuffer = nullptr;
 
-// OpenGL texture to display the ray traced image
 GLuint texture_id = 0;
 
 void framebuffer_size_callback(GLFWwindow *window, int width, int height)
@@ -29,7 +24,6 @@ void framebuffer_size_callback(GLFWwindow *window, int width, int height)
 
 void init_texture()
 {
-    // Create OpenGL texture to display ray traced image
     glGenTextures(1, &texture_id);
     glBindTexture(GL_TEXTURE_2D, texture_id);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
@@ -40,12 +34,10 @@ void init_texture()
 
 void display_framebuffer()
 {
-    // Upload framebuffer to texture
     glBindTexture(GL_TEXTURE_2D, texture_id);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, WINDOW_WIDTH, WINDOW_HEIGHT,
                  0, GL_RGB, GL_UNSIGNED_BYTE, framebuffer);
 
-    // Draw fullscreen quad with the texture
     glEnable(GL_TEXTURE_2D);
     glBindTexture(GL_TEXTURE_2D, texture_id);
 
@@ -72,11 +64,9 @@ void display_framebuffer()
 
 void draw_container_overlay()
 {
-    // Draw wireframe box over the ray-traced image
     glDisable(GL_TEXTURE_2D);
     glDisable(GL_DEPTH_TEST);
 
-    // Setup projection for 3D wireframe
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
     glm::mat4 projection = glm::perspective(glm::radians(45.0f),
@@ -91,12 +81,10 @@ void draw_container_overlay()
         glm::vec3(0.0f, 1.0f, 0.0f));
     glLoadMatrixf(glm::value_ptr(view));
 
-    // Draw wireframe box
     float tank_size = 2.0f;
     glColor3f(0.7f, 0.7f, 0.7f);
     glLineWidth(2.0f);
     glBegin(GL_LINES);
-    // Floor and Ceiling
     for (int i = 0; i <= 1; ++i)
     {
         float y = i * tank_size;
@@ -109,7 +97,6 @@ void draw_container_overlay()
         glVertex3f(0.0f, y, tank_size);
         glVertex3f(0.0f, y, 0.0f);
     }
-    // Vertical edges
     glVertex3f(0.0f, 0.0f, 0.0f);
     glVertex3f(0.0f, tank_size, 0.0f);
     glVertex3f(tank_size, 0.0f, 0.0f);
@@ -123,11 +110,8 @@ void draw_container_overlay()
     glEnable(GL_DEPTH_TEST);
 }
 
-// --- Main Function ---
-
 int main()
 {
-    // Initialize GLFW
     if (!glfwInit())
     {
         std::cerr << "Failed to initialize GLFW" << std::endl;
@@ -145,33 +129,26 @@ int main()
     glfwMakeContextCurrent(window);
     glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
 
-    // Initialize GLEW
     if (glewInit() != GLEW_OK)
     {
         std::cerr << "Failed to initialize GLEW" << std::endl;
         return -1;
     }
 
-    // Enable depth test
     glEnable(GL_DEPTH_TEST);
 
-    // --- Initialize SPH Simulation ---
     solver = new SPHSolver(1000);
 
-    // --- Initialize Ray Tracer ---
     raytracer = new RayTracer(WINDOW_WIDTH, WINDOW_HEIGHT);
 
-    // Set up camera
     raytracer->setCamera(
         glm::vec3(3.0f, 2.5f, 3.0f),
         glm::vec3(1.0f, 1.0f, 1.0f),
         glm::vec3(0.0f, 1.0f, 0.0f),
         45.0f);
 
-    // Allocate framebuffer
     framebuffer = new unsigned char[WINDOW_WIDTH * WINDOW_HEIGHT * 3];
 
-    // Initialize texture
     init_texture();
 
     std::cout << "\n=== Ray Tracer Ready ===" << std::endl;
@@ -179,19 +156,15 @@ int main()
     std::cout << "Starting render loop...\n"
               << std::endl;
 
-    // Main render loop
     int frame_count = 0;
     auto last_time = std::chrono::high_resolution_clock::now();
 
     while (!glfwWindowShouldClose(window))
     {
-        // --- 1. Update SPH Physics ---
         solver->update();
 
-        // --- 2. Get particles ---
         const auto &particles = solver->getParticles();
 
-        // --- 3. Only ray trace every 2 frames ---
         if (frame_count % 3 == 0)
         {
             std::vector<glm::vec3> positions;
@@ -205,7 +178,6 @@ int main()
             raytracer->render(framebuffer);
         }
 
-        // --- 4. Display result ---
         glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
@@ -215,7 +187,6 @@ int main()
         glfwSwapBuffers(window);
         glfwPollEvents();
 
-        // --- 5. Timing Info ---
         frame_count++;
         if (frame_count % 30 == 0)
         {
@@ -227,7 +198,6 @@ int main()
         }
     }
 
-    // Cleanup
     delete[] framebuffer;
     delete raytracer;
     delete solver;

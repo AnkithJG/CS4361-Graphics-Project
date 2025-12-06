@@ -1,5 +1,3 @@
-// SPH.cpp - Fixed to drop water from top
-
 #include "SPH.h"
 #include <iostream>
 #include <cmath>
@@ -10,13 +8,10 @@
 
 using namespace glm;
 
-// --- Constructor and Initialization ---
-
 SPHSolver::SPHSolver(int num_particles)
 {
-    // Setup for Spatial Hashing
     cell_size = H * 2.0f;
-    grid_size_x = grid_size_y = grid_size_z = 10; // 3D tank size 0-2 (scaled)
+    grid_size_x = grid_size_y = grid_size_z = 10;
     int total_cells = grid_size_x * grid_size_y * grid_size_z;
     grid_map.resize(total_cells, -1);
     start_index.resize(total_cells + 1, -1);
@@ -30,9 +25,7 @@ void SPHSolver::init_particles(int num_particles)
 {
     particles.reserve(num_particles);
 
-    float spacing = H * 0.55f; // LOOSER (was 0.35) - let particles breathe
-
-    // Small cube at bottom center
+    float spacing = H * 0.55f;
     float block_size = 0.8f;
 
     float start_x = 0.6f;
@@ -43,7 +36,6 @@ void SPHSolver::init_particles(int num_particles)
     float end_y = start_y + block_size;
     float end_z = start_z + block_size;
 
-    // Calculate center of the block
     glm::vec3 center(start_x + block_size / 2.0f, start_y + block_size / 2.0f, start_z + block_size / 2.0f);
 
     for (float y = start_y; y < end_y && particles.size() < num_particles; y += spacing)
@@ -55,9 +47,8 @@ void SPHSolver::init_particles(int num_particles)
                 Particle p;
                 p.pos = vec3(x, y, z);
 
-                // Give particles velocity AWAY from center (explosive start)
                 glm::vec3 dir = glm::normalize(p.pos - center);
-                p.vel = dir * 1.5f; // Push outward!
+                p.vel = dir * 1.5f;
 
                 p.acc = vec3(0.0f);
                 p.density = RHO0;
@@ -70,7 +61,6 @@ void SPHSolver::init_particles(int num_particles)
     std::cout << "Initialized " << particles.size()
               << " particles - exploding outward!" << std::endl;
 }
-// --- Kernel Functions ---
 
 float SPHSolver::W_poly6(float r2)
 {
@@ -94,8 +84,6 @@ float SPHSolver::W_visc_lapl(float r_len)
         return 0.0f;
     return VISC_LAPL_COEFF * (H - r_len);
 }
-
-// --- Spatial Hashing ---
 
 int SPHSolver::get_cell_id(const glm::vec3 &pos)
 {
@@ -190,8 +178,6 @@ void SPHSolver::find_neighbors(int particle_index, std::vector<int> &neighbors)
         }
     }
 }
-
-// --- Core SPH Steps ---
 
 void SPHSolver::compute_density_pressure()
 {
@@ -288,7 +274,6 @@ void SPHSolver::handle_boundary()
 
     for (auto &p : particles)
     {
-        // X-Axis
         if (p.pos.x < boundary_min)
         {
             p.pos.x = boundary_min;
@@ -300,7 +285,6 @@ void SPHSolver::handle_boundary()
             p.vel.x *= WALL_DAMPING;
         }
 
-        // Y-Axis
         if (p.pos.y < boundary_min)
         {
             p.pos.y = boundary_min;
@@ -312,7 +296,6 @@ void SPHSolver::handle_boundary()
             p.vel.y *= WALL_DAMPING;
         }
 
-        // Z-Axis
         if (p.pos.z < boundary_min)
         {
             p.pos.z = boundary_min;
@@ -325,8 +308,6 @@ void SPHSolver::handle_boundary()
         }
     }
 }
-
-// --- Main Update Loop ---
 
 void SPHSolver::update()
 {
